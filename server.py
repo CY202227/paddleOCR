@@ -4,22 +4,28 @@ import time
 import yaml
 import uuid
 import json
+import requests
 from datetime import timedelta
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
-from paddleocr import PaddleOCR,draw_ocr
+from paddleocr import PaddleOCR, draw_ocr
 from werkzeug import run_simple
 from gevent import pywsgi
-#from gevent.pywsgi import WSGIServer
+from collections import OrderedDict
+import base64
+
+# from gevent.pywsgi import WSGIServer
 
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = timedelta(hours=1)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
+
 def allowed_file(fname):
     return '.' in fname and fname.rsplit('.', 1)[1].lower() in ['png', 'jpg', 'jpeg']
+
 
 def allowed_pdf(fname):
     return '.' in fname and fname.rsplit('.', 1)[1].lower() in ['pdf']
@@ -28,7 +34,8 @@ def allowed_pdf(fname):
 @app.route("/")
 def index():
     return render_template('index.html')
-    
+
+
 @app.route('/ocr', methods=['POST', 'GET'])
 def detect():
     file = request.files['file']
@@ -49,14 +56,11 @@ def detect():
             for line in res:
                 print(line)
 
-        '''
-        识别结果将分别返回
-        '''
         results = []
-        #for i in range(len(img_result)):
-        #results.append(img_result[0])
+        # for i in range(len(img_result)):
+        # results.append(img_result[0])
         from PIL import Image, ImageDraw, ImageFont
-
+        # 挨个读数据
         result = img_result[0]
         image = Image.open(savepath).convert('RGB')
         boxes = [line[0] for line in result]
@@ -64,15 +68,38 @@ def detect():
         scores = [line[1][1] for line in result]
         im_show = draw_ocr(image, boxes, txts, scores, font_path='/path/to/PaddleOCR/doc/fonts/simfang.ttf')
         im_show = Image.fromarray(im_show)
+        im_show.save('./caches/cache.jpg')
+        # 发文件到接口
+
+        data = {'files': open('./caches/cache.jpg', 'rb')}
+        image_data = requests.post(IP, files=data)
+        image_data = image_data.json()
+        Img_data = image_data['data']
+        print(Img_data)
+        data = OrderedDict()
+
+        data['Msg'] = '识别成功'
+        data['Code'] = 200
+        data['Status'] = 'success'
+        data['Position'] = boxes
+        data['Text'] = txts
+        data['Score'] = scores
+        data['Time'] = '{:.4f}s'.format(t2 - t1)
+        data['Img_data'] = Img_data
 
         return jsonify({
-            'Status': 'success',
-            'Position': boxes,
-            'Results': txts,
-            'Score': scores,
-            'Time': '{:.4f}s'.format(t2-t1),
-            'Img': im_show.show()
+            'msg':data['Msg'],
+            'code':data['Code'],
+            'data':{
+            'Status': data['Status'],
+            'Position': data['Position'],
+            'Results': data['Text'],
+            'Score': data['Score'],
+            'Time': data['Time'],
+            'Img': data['Img_data']
+        },
         })
+
     return jsonify({'Status': 'faild'})
 
 
@@ -94,9 +121,8 @@ def detectPdf():
             if res == None:  # 识别到空页就跳过，防止程序报错 / Skip when empty result detected to avoid TypeError:NoneType
                 print(f"[DEBUG] Empty page {idx + 1} detected, skip it.")
                 continue
-            #for line in res:
-                #print(line)
-        #time-2
+
+        # time-2
         t2 = time.time()
         import fitz
         from PIL import Image
@@ -117,22 +143,46 @@ def detectPdf():
         for idx in range(len(result)):
             res = result[idx]
             image = imgs[idx]
-            boxes = [line[0] for line in res]
-            txts = [line[1][0] for line in res]
-            scores = [line[1][1] for line in res]
-            im_show = draw_ocr(image, boxes, txts, scores, font_path='doc/fonts/simfang.ttf')
-            im_show = Image.fromarray(im_show)
-            #im_show.save('result_page_{}.jpg'.format(idx))
+        boxes = [line[0] for line in res]
+        txts = [line[1][0] for line in res]
+        scores = [line[1][1] for line in res]
+        from PIL import Image, ImageDraw, ImageFont
+        im_show = draw_ocr(image, boxes, txts, scores)
+        im_show = Image.fromarray(im_show)
+        im_show.save('./caches/cache.jpg')
+        # 发文件到接口
+
+        data = {'files': open('./caches/cache.jpg', 'rb')}
+        #image_data = requests.post('IP, files=data)
+        #image_data = image_data.json()
+        #Img_data = image_data['data']
+        print(Img_data)
+        data = OrderedDict()
+
+        data['Msg'] = '识别成功'
+        data['Code'] = 200
+        data['Status'] = 'success'
+        data['Position'] = boxes
+        data['Text'] = txts
+        data['Score'] = scores
+        data['Time'] = '{:.4f}s'.format(t2 - t1)
+        #data['Img_data'] = Img_data
+
 
         return jsonify({
-            'Status': 'success',
-            'Position': boxes,
-            'Results': txts,
-            'Score': scores,
-            'Time': '{:.4f}s'.format(t2 - t1),
-            'Img': im_show.show()
+            'msg': data['Msg'],
+            'code': data['Code'],
+            'data': {
+                'Status': data['Status'],
+                'Position': data['Position'],
+                'Results': data['Text'],
+                'Score': data['Score'],
+                'Time': data['Time'],
+                'Img': data['Img_data']
+            },
         })
     return jsonify({'Status': 'faild'})
+
 
 @app.route('/ocrplus', methods=['POST', 'GET'])
 def detectocrp():
@@ -148,7 +198,7 @@ def detectocrp():
         slice = {'horizontal_stride': 300, 'vertical_stride': 500, 'merge_x_thres': 50, 'merge_y_thres': 35}
         results = ocr.ocr(savepath, cls=True)
         from PIL import Image, ImageDraw, ImageFont
-        #time-2
+        # time-2
         t2 = time.time()
         image = Image.open(file).convert("RGB")
         draw = ImageDraw.Draw(image)
@@ -168,21 +218,14 @@ def detectocrp():
         return jsonify({
             'Status': 'success',
             'Results': txt,
-            'Time': '{:.4f}s'.format(t2-t1),
+            'Time': '{:.4f}s'.format(t2 - t1),
             'Img': image.show()
         })
     return jsonify({'Status': 'faild'})
 
 
-
 if __name__ == '__main__':
-
-    ocr = PaddleOCR(use_angle_cls=True,use_gpu=False)
-    server = pywsgi.WSGIServer(('0.0.0.0', 5000), app)
-    server.serve_forever()
-    #app.run(host='127.0.0.1', port=5000, debug=True, threaded=True, processes=1)
-    '''
-    app.run()中可以接受两个参数，分别是threaded和processes，用于开启线程支持和进程支持。
-    1.threaded : 多线程支持，默认为False，即不开启多线程;
-    2.processes：进程数量，默认为1.
-    '''
+    ocr = PaddleOCR(use_angle_cls=True, use_gpu=False)
+    # server = pywsgi.WSGIServer(('0.0.0.0', 8866), app)
+    # server.serve_forever()
+    app.run(host='127.0.0.1', port=5000, debug=True, threaded=True, processes=1)
