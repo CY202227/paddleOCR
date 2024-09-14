@@ -61,14 +61,25 @@ def detect():
         # results.append(img_result[0])
         from PIL import Image, ImageDraw, ImageFont
         # 挨个读数据
-        result = img_result[0]
-        image = Image.open(savepath).convert('RGB')
-        boxes = [line[0] for line in result]
-        txts = [line[1][0] for line in result]
-        scores = [line[1][1] for line in result]
-        im_show = draw_ocr(image, boxes, txts, scores, font_path='/path/to/PaddleOCR/doc/fonts/simfang.ttf')
-        im_show = Image.fromarray(im_show)
-        im_show.save('./caches/cache.jpg')
+        try:
+            result = img_result[0]
+            image = Image.open(savepath).convert('RGB')
+            boxes = [line[0] for line in result]
+            txts = [line[1][0] for line in result]
+            scores = [line[1][1] for line in result]
+            im_show = draw_ocr(image, boxes, txts, scores, font_path='/path/to/PaddleOCR/doc/fonts/simfang.ttf')
+            im_show = Image.fromarray(im_show)
+            im_show.save('./caches/cache.jpg')
+        except Exception as r:
+            return jsonify({
+            'msg':"识别失败",
+            'code':404,
+            'data':{
+            'Status': 'failed',
+            'Results': "",
+            'Time': "",
+            'Img': ""},
+        })
         # 发文件到接口
 
         data = {'files': open('./caches/cache.jpg', 'rb')}
@@ -140,20 +151,33 @@ def detectPdf():
                 img = Image.frombytes("RGB", [pm.width, pm.height], pm.samples)
                 img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
                 imgs.append(img)
-        for idx in range(len(result)):
-            res = result[idx]
-            image = imgs[idx]
-        boxes = [line[0] for line in res]
-        txts = [line[1][0] for line in res]
-        scores = [line[1][1] for line in res]
-        from PIL import Image, ImageDraw, ImageFont
-        im_show = draw_ocr(image, boxes, txts, scores)
-        im_show = Image.fromarray(im_show)
+        try:
+            for idx in range(len(result)):
+                res = result[idx]
+                image = imgs[idx]
+            boxes = [line[0] for line in res]
+            txts = [line[1][0] for line in res]
+            scores = [line[1][1] for line in res]
+            from PIL import Image, ImageDraw, ImageFont
+            im_show = draw_ocr(image, boxes, txts, scores)
+            im_show = Image.fromarray(im_show)
+        except Exception as r:
+            return jsonify({
+                'msg': "识别失败",
+                'code': 404,
+                'data': {
+                    'Status': 'failed',
+                    'Results': "",
+                    'Time': "",
+                    'Img': ""},
+            })
         im_show.save('./caches/cache.jpg')
+
+
         # 发文件到接口
 
         data = {'files': open('./caches/cache.jpg', 'rb')}
-        #image_data = requests.post('IP, files=data)
+        #image_data = requests.post(ip, files=data)
         #image_data = image_data.json()
         #Img_data = image_data['data']
         print(Img_data)
